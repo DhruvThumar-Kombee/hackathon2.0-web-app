@@ -57,7 +57,10 @@ export default function () {
   const badLogin = http.post(
     `${BASE_URL}/auth/login`,
     JSON.stringify({ email: 'fake@test.com', password: 'wrongpass' }),
-    params
+    {
+      headers: { 'Content-Type': 'application/json' },
+      responseCallback: http.expectedStatuses(401), // Don't count 401 as a failure in metrics
+    }
   );
   check(badLogin, { '✅ 401 expected': (r) => r.status === 401 });
 
