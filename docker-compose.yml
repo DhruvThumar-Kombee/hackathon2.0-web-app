@@ -1,0 +1,155 @@
+
+networks:
+  hackathon-net:
+    driver: bridge
+
+volumes:
+  postgres_data:
+  grafana_data:
+  prometheus_data:
+  loki_data:
+
+services:
+
+  # ─── Database ───────────────────────────────────────────────
+  db:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_DB: hackathon
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    networks:
+      - hackathon-net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ─── Backend ─────────────────────────────────────────────────
+  backend:
+    build: ./backend
+    ports:
+      - "8000:8000"
+    environment:
+      DATABASE_URL: postgresql://postgres:postgres@db:5432/hackathon
+      SECRET_KEY: supersecretkey123
+      SERVICE_NAME: hackathon-api
+      OTEL_ENDPOINT: http://otel-collector:4317
+    depends_on:
+      db:
+        condition: service_healthy
+      otel-collector:
+        condition: service_started
+    networks:
+      - hackathon-net
+    restart: unless-stopped
+
+  # ─── OpenTelemetry Collector ─────────────────────────────────
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.98.0
+    volumes:
+      - ./observability/otel-collector/otel-collector-config.yml:/etc/otel/config.yaml
+    command: ["--config=/etc/otel/config.yaml"]
+    ports:
+      - "4317:4317"
+      - "4318:4318"
+      - "8888:8888"
+    networks:
+      - hackathon-net
+    depends_on:
+      tempo:
+        condition: service_started
+      prometheus:
+        condition: service_started
+
+  # ─── Prometheus ──────────────────────────────────────────────
+  prometheus:
+    image: prom/prometheus:v2.51.0
+    volumes:
+      - ./observability/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.retention.time=15d'
+      - '--web.enable-remote-write-receiver'
+    ports:
+      - "9090:9090"
+    networks:
+      - hackathon-net
+    restart: unless-stopped
+
+  # ─── Loki ────────────────────────────────────────────────────
+  loki:
+    image: grafana/loki:2.9.6
+    volumes:
+      - ./observability/loki/loki-config.yml:/etc/loki/config.yaml
+      - loki_data:/loki
+    command: -config.file=/etc/loki/config.yaml
+    ports:
+      - "3100:3100"
+    networks:
+      - hackathon-net
+    restart: unless-stopped
+
+  # ─── Promtail ────────────────────────────────────────────────
+  promtail:
+    image: grafana/promtail:2.9.6
+    volumes:
+      - ./observability/promtail/promtail-config.yml:/etc/promtail/config.yaml
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro
+      - /var/run/docker.sock:/var/run/docker.sock
+    command: -config.file=/etc/promtail/config.yaml
+    networks:
+      - hackathon-net
+    restart: unless-stopped
+
+  # ─── Tempo ───────────────────────────────────────────────────
+  tempo:
+    image: grafana/tempo:2.4.1
+    volumes:
+      - ./observability/tempo/tempo-config.yml:/etc/tempo/config.yaml
+    command: -config.file=/etc/tempo/config.yaml
+    ports:
+      - "3200:3200"
+      - "9411:9411"
+    networks:
+      - hackathon-net
+    restart: unless-stopped
+
+  # ─── Grafana ─────────────────────────────────────────────────
+  grafana:
+    image: grafana/grafana:10.4.0
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: admin
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_FEATURE_TOGGLES_ENABLE: "traceqlEditor"
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./observability/grafana/provisioning:/etc/grafana/provisioning
+      - ./observability/grafana/dashboards:/etc/grafana/dashboards
+    ports:
+      - "3001:3000"
+    depends_on:
+      - prometheus
+      - loki
+      - tempo
+    networks:
+      - hackathon-net
+    restart: unless-stopped
+
+  # ─── Frontend ────────────────────────────────────────────────
+  frontend:
+    build: ./frontend
+    ports:
+      - "80:80"
+    depends_on:
+      - backend
+    networks:
+      - hackathon-net
+    restart: unless-stopped
