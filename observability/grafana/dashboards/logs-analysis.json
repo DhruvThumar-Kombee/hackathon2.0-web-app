@@ -11,28 +11,27 @@
       "datasource": { "type": "loki", "uid": "loki" },
       "gridPos": { "h": 10, "w": 24, "x": 0, "y": 0 },
       "id": 1,
-      "title": "Error Logs",
+      "title": "Error & Warning Logs",
       "targets": [
         {
           "datasource": { "type": "loki", "uid": "loki" },
-          "expr": "{job=\"hackathon-api\"} | json | level=\"error\" or level=\"ERROR\" or level=\"warning\" or level=\"WARNING\"",
+          "expr": "{service=\"backend\"} | json | level=~\"error|ERROR|warning|WARNING\"",
           "refId": "A"
         }
       ],
-      "type": "logs"
+      "type": "logs",
+      "options": { "dedupStrategy": "none", "enableLogDetails": true, "prettifyLogMessage": false, "showTime": true, "wrapLogMessage": false }
     },
     {
       "datasource": { "type": "loki", "uid": "loki" },
-      "fieldConfig": {
-        "defaults": { "color": { "mode": "palette-classic" } }
-      },
-      "gridPos": { "h": 6, "w": 8, "x": 0, "y": 10 },
+      "fieldConfig": { "defaults": { "color": { "mode": "palette-classic" } } },
+      "gridPos": { "h": 7, "w": 8, "x": 0, "y": 10 },
       "id": 2,
-      "title": "Log severity breakdown",
+      "title": "Log Count by Severity",
       "targets": [
         {
           "datasource": { "type": "loki", "uid": "loki" },
-          "expr": "sum by (level) (count_over_time({job=\"hackathon-api\"} | json [1h]))",
+          "expr": "sum by (level) (count_over_time({service=\"backend\"} | json [5m]))",
           "legendFormat": "{{level}}",
           "refId": "A"
         }
@@ -41,39 +40,87 @@
     },
     {
       "datasource": { "type": "loki", "uid": "loki" },
-      "gridPos": { "h": 6, "w": 8, "x": 8, "y": 10 },
+      "gridPos": { "h": 7, "w": 8, "x": 8, "y": 10 },
       "id": 3,
-      "title": "Login Failures (Recent)",
+      "title": "Login Failures",
       "targets": [
         {
           "datasource": { "type": "loki", "uid": "loki" },
-          "expr": "{job=\"hackathon-api\"} | json | msg=~\".*login.*failed.*\" or msg=~\".*Authentication.*failed.*\" or status_code=401",
+          "expr": "{service=\"backend\"} | json | message=\"LOGIN_FAILED\"",
           "refId": "A"
         }
       ],
-      "type": "logs"
+      "type": "logs",
+      "options": { "dedupStrategy": "none", "enableLogDetails": true, "showTime": true }
     },
     {
       "datasource": { "type": "loki", "uid": "loki" },
-      "gridPos": { "h": 6, "w": 8, "x": 16, "y": 10 },
+      "gridPos": { "h": 7, "w": 8, "x": 16, "y": 10 },
       "id": 4,
-      "title": "Validation Failures (Recent)",
+      "title": "Validation Failures (422)",
       "targets": [
         {
           "datasource": { "type": "loki", "uid": "loki" },
-          "expr": "{job=\"hackathon-api\"} | json | msg=~\".*validation.*failed.*\" or status_code=422",
+          "expr": "{service=\"backend\"} | json | status_code=\"422\" or message=~\".*VALIDATION.*FAILED.*\"",
           "refId": "A"
         }
       ],
-      "type": "logs"
+      "type": "logs",
+      "options": { "dedupStrategy": "none", "enableLogDetails": true, "showTime": true }
+    },
+    {
+      "datasource": { "type": "loki", "uid": "loki" },
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 17 },
+      "id": 5,
+      "title": "Filter Logs by Trace ID",
+      "description": "Enter a trace_id value in the variable above to correlate logs to a specific trace",
+      "targets": [
+        {
+          "datasource": { "type": "loki", "uid": "loki" },
+          "expr": "{service=\"backend\"} | json | trace_id=~\"$trace_id\"",
+          "refId": "A"
+        }
+      ],
+      "type": "logs",
+      "options": { "dedupStrategy": "none", "enableLogDetails": true, "showTime": true, "wrapLogMessage": true }
+    },
+    {
+      "datasource": { "type": "loki", "uid": "loki" },
+      "fieldConfig": { "defaults": { "color": { "mode": "palette-classic" }, "unit": "short" } },
+      "gridPos": { "h": 7, "w": 24, "x": 0, "y": 25 },
+      "id": 6,
+      "title": "Log Volume Over Time (by level)",
+      "targets": [
+        {
+          "datasource": { "type": "loki", "uid": "loki" },
+          "expr": "sum by (level) (count_over_time({service=\"backend\"} | json [1m]))",
+          "legendFormat": "{{level}}",
+          "refId": "A"
+        }
+      ],
+      "type": "timeseries"
     }
   ],
   "schemaVersion": 39,
   "tags": ["hackathon"],
-  "templating": { "list": [] },
+  "templating": {
+    "list": [
+      {
+        "current": { "selected": false, "text": ".*", "value": ".*" },
+        "description": "Paste a trace_id to filter logs for that specific request",
+        "hide": 0,
+        "label": "Trace ID",
+        "name": "trace_id",
+        "options": [{ "selected": true, "text": ".*", "value": ".*" }],
+        "query": ".*",
+        "skipUrlSync": false,
+        "type": "textbox"
+      }
+    ]
+  },
   "time": { "from": "now-1h", "to": "now" },
   "timezone": "",
   "title": "Logs Analysis",
   "uid": "logs-analysis",
-  "version": 2
+  "version": 3
 }

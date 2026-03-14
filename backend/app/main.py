@@ -19,6 +19,20 @@ def seed_data():
     try:
         if db.query(Product).count() == 0:
             logger.info("SEEDING_DATA")
+            # Seed Default User
+            if db.query(User).count() == 0:
+                from passlib.context import CryptContext
+                pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+                admin_user = User(
+                    email="admin@kombee.com",
+                    username="admin",
+                    hashed_password=pwd_context.hash("admin123"),
+                    role="admin"
+                )
+                db.add(admin_user)
+                db.commit()
+                logger.info("DEFAULT_USER_SEEDED")
+
             demo_products = [
                 Product(name="Neural Core X1", price=125000, category="Processing", stock=5, description="High-performance AI processing unit"),
                 Product(name="Quantum Flux Capacitor", price=450000, category="Energy", stock=2, description="Stabilizes temporal anomalies"),
@@ -47,7 +61,13 @@ app = FastAPI(title="Hackathon API", version="1.0.0", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://127.0.0.1:5173", "http://localhost:3000"],
+    allow_origins=[
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+        "http://localhost:3000",
+        "http://localhost:80",
+        "http://localhost",
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"]
@@ -61,9 +81,9 @@ Instrumentator().instrument(app).expose(app, endpoint="/metrics")
 
 # Business metrics
 meter = otel_metrics.get_meter("hackathon.business")
-login_failures_counter  = meter.create_counter("login_failures_total",  description="Login failures")
-active_users_gauge      = meter.create_gauge("active_users_total",       description="Active users")
-order_value_histogram   = meter.create_histogram("order_value",          description="Order value distribution")
+login_failures_counter = meter.create_counter("login_failures_total", description="Login failures")
+active_users_gauge     = meter.create_gauge("active_users_total",     description="Active users")
+order_value_histogram  = meter.create_histogram("order_value",        description="Order value distribution")
 
 # Request logging middleware
 @app.middleware("http")
@@ -72,9 +92,8 @@ async def log_requests(request: Request, call_next):
     response = await call_next(request)
     duration_ms = float(f"{(time.time() - start) * 1000:.2f}")
     level = "warning" if response.status_code >= 400 else "info"
-    # Track active users (simplified as unique IPs for demo)
     active_users_gauge.set(1, {"client_ip": request.client.host if request.client else "unknown"})
-    
+
     if response.status_code == 401 and "/login" in request.url.path:
         login_failures_counter.add(1, {"method": request.method})
 
@@ -87,13 +106,9 @@ async def log_requests(request: Request, call_next):
     })
     return response
 
-from .routers import auth, products, orders, anomalies
-
-# ... existing imports ...
-
-app.include_router(auth.router,     prefix="/api/auth",     tags=["auth"])
-app.include_router(products.router, prefix="/api/products", tags=["products"])
-app.include_router(orders.router,   prefix="/api/orders",   tags=["orders"])
+app.include_router(auth.router,      prefix="/api/auth",      tags=["auth"])
+app.include_router(products.router,  prefix="/api/products",  tags=["products"])
+app.include_router(orders.router,    prefix="/api/orders",    tags=["orders"])
 app.include_router(anomalies.router, prefix="/api/anomalies", tags=["anomalies"])
 
 @app.get("/health")
